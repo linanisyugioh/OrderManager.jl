@@ -1,21 +1,17 @@
-# 此文件将由 generate_artifacts.jl 自动生成
-# 初始占位内容，运行打包脚本后会更新
-
 [[ordermanager_lib]]
 arch = "x86_64"
-git-tree-sha1 = "0000000000000000000000000000000000000000"
+git-tree-sha1 = "f86af0c5f584392b92fbe62402e423189c49ff61"
 os = "windows"
 
     [[ordermanager_lib.download]]
-    sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+    sha256 = "5f20caa0e69aec31d1adfc9dbf013b4e420f5d26ee5c2f27629556ced04d5792"
     url = "https://github.com/linanisyugioh/OrderManager.jl/releases/download/V1.0.0/ordermanager_windows_x64.tar.gz"
-
 [[ordermanager_lib]]
 arch = "x86_64"
-git-tree-sha1 = "0000000000000000000000000000000000000000"
+git-tree-sha1 = "ec0617076401c2e175e5632a64f1f160c9159846"
 libc = "glibc"
 os = "linux"
 
     [[ordermanager_lib.download]]
-    sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+    sha256 = "8b26cefedb3bef12565ef27a3ad476681305305ce7be579fce3a1e938fe6a4ec"
     url = "https://github.com/linanisyugioh/OrderManager.jl/releases/download/V1.0.0/ordermanager_linux_x64.tar.gz"
