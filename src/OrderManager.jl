@@ -461,6 +461,66 @@ end
 export om_query_order_ids
 
 """
+    om_query_order_id_by_cl_order_id(strategy_id::String, cl_order_id::String)::Union{String,Nothing}
+按 strategy_id + cl_order_id 查询系统 order_id（使用缓存作用域，仅当前 order 表）。
+
+成功时返回指向 service 内本次查询结果缓冲的字符串；在下次使用相同入参查询或 om_release 前有效。
+未找到返回 nothing。
+
+@param strategy_id   策略ID（非空）
+@param cl_order_id   客户委托ID，与 OmOrder.cl_order_id 一致（非空）
+@return 系统 order_id 字符串或 nothing
+
+错误码：
+  - 0(OM_Ok) 成功；
+  - -1(OM_InvalidArg) 参数非法；
+  - -8(OM_NotInited) service 未初始化；
+  委托 Store 层(-400 ~ -409)：
+    -403(OrderStore_NotFound) 未找到
+"""
+function om_query_order_id_by_cl_order_id(strategy_id::String, cl_order_id::String)::String
+    out_ptr = Ref{Ptr{UInt8}}()
+    sym = Libc.Libdl.dlsym(lib, :om_query_order_id_by_cl_order_id)
+    err = ccall(sym, Int32, (Ptr{UInt8}, Ptr{UInt8}, Ref{Ptr{UInt8}}), strategy_id, cl_order_id, out_ptr)
+    if err == 0 && out_ptr[] != C_NULL
+        return unsafe_string(out_ptr[])
+    else
+        return ""
+    end
+end
+export om_query_order_id_by_cl_order_id
+
+"""
+    om_query_order_cl_and_strategy(order_id::String)::Union{Tuple{String,String},Nothing}
+按 order_id 查询 cl_order_id 与 strategy_id（使用缓存作用域，仅当前 order 表，单次 SQL）。
+
+成功时返回 (cl_order_id, strategy_id) 元组；在下次使用相同入参查询或 om_release 前有效。
+未找到返回 nothing。
+
+@param order_id 系统委托ID（非空）
+@return (cl_order_id, strategy_id) 元组或 nothing
+
+错误码：
+  - 0(OM_Ok) 成功；
+  - -1(OM_InvalidArg) 参数非法；
+  - -8(OM_NotInited) service 未初始化；
+  委托 Store 层(-400 ~ -409)：
+    -403(OrderStore_NotFound) 未找到
+"""
+function om_query_order_cl_and_strategy(order_id::String)::Tuple{String,String}
+    out_cl_ptr = Ref{Ptr{UInt8}}()
+    out_st_ptr = Ref{Ptr{UInt8}}()
+    sym = Libc.Libdl.dlsym(lib, :om_query_order_cl_and_strategy)
+    err = ccall(sym, Int32, (Ptr{UInt8}, Ref{Ptr{UInt8}}, Ref{Ptr{UInt8}}), order_id, out_cl_ptr, out_st_ptr)
+    if err == 0 && out_cl_ptr[] != C_NULL && out_st_ptr[] != C_NULL
+        return (unsafe_string(out_cl_ptr[]), unsafe_string(out_st_ptr[]))
+    else
+        return ("", "")
+    end
+end
+export om_query_order_cl_and_strategy
+
+"""
     om_query_position_codes(strategy_id::String, status::Integer, period::Integer, side::Integer)::String
 查询 strategy_id 下持仓的 code 列表（使用缓存作用域）。
 
