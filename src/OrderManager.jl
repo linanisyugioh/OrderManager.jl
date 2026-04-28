@@ -64,10 +64,15 @@ end
 # ==================== Manager API ====================
 
 """
-    om_init(work_dir::String)::Cint
+    om_init(work_dir::String, log_level::Integer=1)::Cint
 初始化管理实例：初始化日志、数据库、各 Store 与 service 组件。
 
 @param work_dir 工作目录（必须可写）；日志写入 work_dir/logs，数据库为 work_dir/om.db
+@param log_level 日志级别
+  - 0 (LogLevel_Debug)：调试
+  - 1 (LogLevel_Info)：信息（默认）
+  - 2 (LogLevel_Warn)：警告
+  - 3 (LogLevel_Error)：错误
 @return 0(OM_Ok) 成功；
         -1(OM_InvalidArg) 参数非法；
         -8(OM_NotInited) service 未初始化；
@@ -75,9 +80,9 @@ end
         -581(DbManager_OpenFailed) 数据库文件打开/创建失败；
         -582(DbManager_TxError) 事务操作失败
 """
-function om_init(work_dir::String)::Cint
+function om_init(work_dir::String, log_level::Integer=1)::Cint
     sym = Libc.Libdl.dlsym(lib, :om_init)
-    err = ccall(sym, Int32, (Ptr{UInt8},), work_dir)
+    err = ccall(sym, Int32, (Ptr{UInt8}, Int32), work_dir, log_level)
     return err
 end
 export om_init
