@@ -433,7 +433,7 @@ end
 export om_query_order
 
 """
-    om_query_order_ids(strategy_id::String, status::Integer, code::String="", side::Integer=3, bs::Integer=3)::String
+    om_query_order_ids(strategy_id::String, status::Integer, code::String="", side::Integer=3, bs::Integer=3)::Vector{String}
 查询 strategy_id 下委托的 order_id 列表（使用缓存作用域）。
 
 每次查询将逗号分隔的 order_id 字符串写入 service 内该策略的缓存，通过返回值返回
