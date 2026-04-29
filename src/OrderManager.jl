@@ -452,21 +452,24 @@ export om_query_order
   - -1(OM_InvalidArg) 参数非法；
   - -8(OM_NotInited) service 未初始化
 """
-function om_query_order_ids(strategy_id::String, status::Integer, code::String, side::Integer, bs::Integer)::String
+function om_query_order_ids(strategy_id::String, status::Integer, code::String, side::Integer, bs::Integer)::Vector{String}
     out_ptr = Ref{Ptr{UInt8}}()
     sym = Libc.Libdl.dlsym(lib, :om_query_order_ids)
-    code_ptr = isempty(code) ? C_NULL : pointer(code)
-    err = ccall(sym, Int32, (Ptr{UInt8}, Cint, Ptr{UInt8}, Cint, Cint, Ptr{Ptr{UInt8}}), strategy_id, status, code_ptr, side, bs, out_ptr)
+    err = ccall(sym, Int32, (Ptr{UInt8}, Cint, Ptr{UInt8}, Cint, Cint, Ptr{Ptr{UInt8}}), strategy_id, status, code, side, bs, out_ptr)
     if err == 0 && out_ptr[] != C_NULL
-        return unsafe_string(out_ptr[])
+        order_ids_str = unsafe_string(out_ptr[])
+        order_ids = String.(split(order_ids_str,","))
+        order_ids = filter(!isempty, order_ids)
+        return order_ids
     else
-        return ""
+        order_ids = Vector{String}()
+        return order_ids
     end
 end
 export om_query_order_ids
 
 """
-    om_query_order_id_by_cl_order_id(strategy_id::String, cl_order_id::String)::Union{String,Nothing}
+    om_query_order_id_by_cl_order_id(strategy_id::String, cl_order_id::String)::String
 按 strategy_id + cl_order_id 查询系统 order_id（使用缓存作用域，仅当前 order 表）。
 
 成功时返回指向 service 内本次查询结果缓冲的字符串；在下次使用相同入参查询或 om_release 前有效。
@@ -496,7 +499,7 @@ end
 export om_query_order_id_by_cl_order_id
 
 """
-    om_query_order_cl_and_strategy(order_id::String)::Union{Tuple{String,String},Nothing}
+    om_query_order_cl_and_strategy(order_id::String)::Tuple{String,String}
 按 order_id 查询 cl_order_id 与 strategy_id（使用缓存作用域，仅当前 order 表，单次 SQL）。
 
 成功时返回 (cl_order_id, strategy_id) 元组；在下次使用相同入参查询或 om_release 前有效。
@@ -526,7 +529,7 @@ end
 export om_query_order_cl_and_strategy
 
 """
-    om_query_position_codes(strategy_id::String, status::Integer, period::Integer, side::Integer)::String
+    om_query_position_codes(strategy_id::String, status::Integer, period::Integer, side::Integer)::Vector{String}
 查询 strategy_id 下持仓的 code 列表（使用缓存作用域）。
 
 每次查询将逗号分隔的 code 字符串写入 service 内该策略的缓存，通过返回值返回
@@ -544,20 +547,24 @@ export om_query_order_cl_and_strategy
   - -1(OM_InvalidArg) 参数非法；
   - -8(OM_NotInited) service 未初始化
 """
-function om_query_position_codes(strategy_id::String, status::Integer, period::Integer, side::Integer)::String
+function om_query_position_codes(strategy_id::String, status::Integer, period::Integer, side::Integer)::Vector{String}
     out_ptr = Ref{Ptr{UInt8}}()
     sym = Libc.Libdl.dlsym(lib, :om_query_position_codes)
     err = ccall(sym, Int32, (Ptr{UInt8}, Int32, Int32, Int32, Ref{Ptr{UInt8}}), strategy_id, status, period, side, out_ptr)
     if err == 0 && out_ptr[] != C_NULL
-        return unsafe_string(out_ptr[])
+        codes_str = unsafe_string(out_ptr[])
+        codes = String.(split(codes_str,","))
+        codes = filter(!isempty, codes)
+        return codes
     else
-        return ""
+        codes = Vector{String}()
+        return codes
     end
 end
 export om_query_position_codes
 
 """
-    om_query_account_position_codes()::String
+    om_query_account_position_codes()::Vector{String}
 查询账户级持仓的 code 列表（使用缓存作用域）。
 
 返回账户下全部未平仓持仓的 distinct code，逗号分隔。
@@ -574,14 +581,18 @@ export om_query_position_codes
   - -1(OM_InvalidArg) 参数非法；
   - -8(OM_NotInited) service 未初始化
 """
-function om_query_account_position_codes()::String
+function om_query_account_position_codes()::Vector{String}
     out_ptr = Ref{Ptr{UInt8}}()
     sym = Libc.Libdl.dlsym(lib, :om_query_account_position_codes)
     err = ccall(sym, Int32, (Ref{Ptr{UInt8}},), out_ptr)
     if err == 0 && out_ptr[] != C_NULL
-        return unsafe_string(out_ptr[])
+        codes_str = unsafe_string(out_ptr[])
+        codes = String.(split(codes_str,","))
+        codes = filter(!isempty, codes)
+        return codes
     else
-        return ""
+        codes = Vector{String}()
+        return codes
     end
 end
 export om_query_account_position_codes
