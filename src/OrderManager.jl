@@ -214,6 +214,7 @@ Order 必填字段：
           -102(OrderProc_FeeCodeInvalid) fee_code_info.code 与 order.code 不匹配；
           -103(OrderProc_Internal) 内部逻辑错误（不应出现的状态）；
           -104(OrderProc_InvalidState) 委托状态流转非法（如已终态再次到达）；
+          -107(OrderProc_NotExistHedgeFlag) hedge_flag 非法值（非 0/1/2/3）；
           -105(OrderProc_InvalidMarginRatio) 保证金率选择失败（direction + hedge_flag 组合无效）；
           -106(OrderProc_InvalidExchange) 交易所与平仓方向组合非法（委托层检查用）；
         持仓处理层(-200 ~ -299)：
@@ -225,7 +226,9 @@ Order 必填字段：
         资金处理层(-300 ~ -399)：
           -301(FundtableProc_InvalidArg) 参数非法；
           -302(FundtableProc_StoreError) Store 操作失败；
-          -303(FundtableProc_NotFound) 找不到对应 Fundtable 记录
+          -303(FundtableProc_NotFound) 找不到对应 Fundtable 记录；
+          -304(FundtableProc_InsufficientCash) 策略级可用资金不足以抵扣保证金增幅；
+          -305(FundtableProc_InvalidMarginRatio) 保证金率选取失败（direction + hedge_flag 组合无效或 margin_ratio 为 0）
 """
 function om_handle_order(order::cOmOrder, fee_info::cFeeCodeInfo)::Cint
     sym = Libc.Libdl.dlsym(lib, :om_handle_order)
