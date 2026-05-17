@@ -1,17 +1,17 @@
 [[ordermanager_lib]]
 arch = "x86_64"
-git-tree-sha1 = "3301ce09f84ce03f39b64587e8182c2a5f3a2e7c"
+git-tree-sha1 = "90e77eacd094ecea8fa66436751bd0768d9faee2"
 os = "windows"
 
     [[ordermanager_lib.download]]
-    sha256 = "d9e7da56d0dfca02059810ba1623225fafd85f66caa06a480edd3f6326381e44"
-    url = "https://github.com/linanisyugioh/OrderManager.jl/releases/download/V0.1.7/ordermanager_windows_x64.tar.gz"
+    sha256 = "c53889ac633f92c2958db5cb19b7bd2e6460c45e0d662d72331ce326c9688266"
+    url = "https://github.com/linanisyugioh/OrderManager.jl/releases/download/V0.1.8/ordermanager_windows_x64.tar.gz"
 [[ordermanager_lib]]
 arch = "x86_64"
-git-tree-sha1 = "65d18cc6340046e4938042c38ac74617783809e5"
+git-tree-sha1 = "911a27597781678a6ce754d08dc015de3fdf5647"
 libc = "glibc"
 os = "linux"
 
     [[ordermanager_lib.download]]
-    sha256 = "03031e115963f8b5b87c5206024905330e3b11f10978a27d97b4083aaaf81d27"
-    url = "https://github.com/linanisyugioh/OrderManager.jl/releases/download/V0.1.7/ordermanager_linux_x64.tar.gz"
+    sha256 = "df5abc70171a594a2947a5cbaecdbb6cd4af67ec1aab0fc51444a20724e721f8"
+    url = "https://github.com/linanisyugioh/OrderManager.jl/releases/download/V0.1.8/ordermanager_linux_x64.tar.gz"
