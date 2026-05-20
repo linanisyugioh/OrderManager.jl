@@ -712,6 +712,36 @@ function om_query_account_fund()::Union{cAccountFundtable,Nothing}
 end
 export om_query_account_fund
 
+"""
+    om_query_strategy_ids()::Vector{String}
+查询当前作用域下所有 strategy_id 列表（使用缓存作用域）。
+
+每次查询将逗号分隔的 strategy_id 字符串写入 service 内缓存，通过返回值返回
+指向该缓存的指针。返回格式：strategy_id 之间用 "," 分割，无数据时为空数组。
+指针在下次调用本接口或 om_release 前有效。
+
+@return strategy_id 字符串数组（无数据返回空数组）
+
+错误码：
+  - 0(OM_Ok) 成功；
+  - -1(OM_InvalidArg) 参数非法；
+  - -8(OM_NotInited) service 未初始化
+"""
+function om_query_strategy_ids()::Vector{String}
+    out_ptr = Ref{Ptr{UInt8}}()
+    sym = Libc.Libdl.dlsym(lib, :om_query_strategy_ids)
+    err = ccall(sym, Int32, (Ref{Ptr{UInt8}},), out_ptr)
+    if err == 0 && out_ptr[] != C_NULL
+        ids_str = unsafe_string(out_ptr[])
+        ids = String.(split(ids_str, ","))
+        ids = filter(!isempty, ids)
+        return ids
+    else
+        return Vector{String}()
+    end
+end
+export om_query_strategy_ids
+
 # ==================== HFT Adapter API ====================
 
 """
