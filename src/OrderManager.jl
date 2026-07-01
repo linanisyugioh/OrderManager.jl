@@ -25,6 +25,8 @@ using FinancialStruct:cAccountFundtable
 #using FinancialStruct:cCombinationUnitHis
 #using FinancialStruct:cAccountScopePnlDelta
 using FinancialStruct:cExternalPosition
+using FinancialStruct:cPositionWithOrder
+using FinancialStruct:cAccountPositionWithOrder
 
 # 使用 Artifacts 动态加载库文件
 function __init__()
@@ -894,5 +896,170 @@ function om_verify_assets(run_id::String, account_id::String, account_type::Inte
     return err
 end
 export om_verify_assets
+
+# ==================== 持仓记录聚合查询 API ====================
+
+# 聚合查询首次试探缓冲区容量
+const _QUERY_INITIAL_CAPACITY = 64
+
+"""
+    om_query_position_records(strategy_id::String, open_order_id::String, include_history::Integer)::Vector{cPositionWithOrder}
+按开仓委托聚合查询策略级持仓记录（PositionWithOrder，使用缓存作用域）。
+
+以 (open_order_id, close_order_id) 二元组分组：未平部分取自 position_unit、
+已平部分取自 position_unit_his，逐组聚合为一条 PositionWithOrder 返回。
+一个开仓委托可能产出 0..N 条已平 + 0..1 条未平记录。交易日由系统内部取（无需调用方传入）。
+
+【两段式查询】内部先用初始容量 $(_QUERY_INITIAL_CAPACITY) 试探，
+若返回 out_count == 初始容量（缓冲区可能装不下全部数据），
+则按 out_count 重新分配后再查一次，确保不丢数据。
+
+@param strategy_id     策略ID（非空）
+@param open_order_id   开仓委托ID（非空）
+@param include_history 是否包含历史平仓：0=仅今日平仓+未平仓；1=全部（未平+今日平+历史平）
+@return 查询到的 PositionWithOrder 数组（空数组表示无数据或出错）
+
+错误码：
+  - 0(OM_Ok) 成功；
+  - -1(OM_InvalidArg) 参数非法；
+  - -8(OM_NotInited) service 未初始化
+"""
+function om_query_position_records(strategy_id::String, open_order_id::String,
+                                   include_history::Integer)::Vector{cPositionWithOrder}
+    sym = Libc.Libdl.dlsym(lib, :om_query_position_records)
+    # 第一次：用初始容量试探
+    buf = Vector{cPositionWithOrder}(undef, _QUERY_INITIAL_CAPACITY)
+    out_count = Ref{Cint}(0)
+    err = ccall(sym, Cint,
+                (Ptr{UInt8}, Ptr{UInt8}, Cint, Ptr{cPositionWithOrder}, Cint, Ref{Cint}),
+                strategy_id, open_order_id, include_history,
+                buf, _QUERY_INITIAL_CAPACITY, out_count)
+    err == 0 || return Vector{cPositionWithOrder}()
+    n = Int(out_count[])
+    n < _QUERY_INITIAL_CAPACITY && return buf[1:n]
+    # 缓冲区可能不足，按真实数量再查一次
+    buf = Vector{cPositionWithOrder}(undef, n)
+    err = ccall(sym, Cint,
+                (Ptr{UInt8}, Ptr{UInt8}, Cint, Ptr{cPositionWithOrder}, Cint, Ref{Cint}),
+                strategy_id, open_order_id, include_history,
+                buf, n, out_count)
+    err == 0 || return Vector{cPositionWithOrder}()
+    return buf[1:Int(out_count[])]
+end
+export om_query_position_records
+
+"""
+    om_query_position_his(strategy_id::String, oper_date::Integer)::Vector{cPositionWithOrder}
+读取某日的 position_his 持仓聚合快照（使用缓存作用域）。
+
+position_his 由每日结算物化写入（每日当日未平 + 当日平的 PositionWithOrder 快照）。
+当日数据请用 om_query_position_records 实时聚合；历史快照用本接口按 oper_date 读取。
+
+【两段式查询】内部先用初始容量 $(_QUERY_INITIAL_CAPACITY) 试探，
+若返回 out_count == 初始容量则按真实数量再查一次。
+
+@param strategy_id 策略ID（非空）
+@param oper_date   归属日 YYYYMMDD
+@return 查询到的 PositionWithOrder 数组（空数组表示无数据或出错）
+
+错误码：
+  - 0(OM_Ok) 成功；
+  - -1(OM_InvalidArg) 参数非法；
+  - -8(OM_NotInited) service 未初始化
+"""
+function om_query_position_his(strategy_id::String, oper_date::Integer)::Vector{cPositionWithOrder}
+    sym = Libc.Libdl.dlsym(lib, :om_query_position_his)
+    buf = Vector{cPositionWithOrder}(undef, _QUERY_INITIAL_CAPACITY)
+    out_count = Ref{Cint}(0)
+    err = ccall(sym, Cint,
+                (Ptr{UInt8}, Cint, Ptr{cPositionWithOrder}, Cint, Ref{Cint}),
+                strategy_id, oper_date, buf, _QUERY_INITIAL_CAPACITY, out_count)
+    err == 0 || return Vector{cPositionWithOrder}()
+    n = Int(out_count[])
+    n < _QUERY_INITIAL_CAPACITY && return buf[1:n]
+    buf = Vector{cPositionWithOrder}(undef, n)
+    err = ccall(sym, Cint,
+                (Ptr{UInt8}, Cint, Ptr{cPositionWithOrder}, Cint, Ref{Cint}),
+                strategy_id, oper_date, buf, n, out_count)
+    err == 0 || return Vector{cPositionWithOrder}()
+    return buf[1:Int(out_count[])]
+end
+export om_query_position_his
+
+"""
+    om_query_account_position_records(open_order_id::String, include_history::Integer)::Vector{cAccountPositionWithOrder}
+账户级按开仓委托聚合查询（实时，使用缓存作用域；交易日内部取）。
+
+与 om_query_position_records 对称，但为账户级（无 strategy_id），数据源是
+account_position_unit / account_position_unit_his，支持 combination。
+
+【两段式查询】内部先用初始容量 $(_QUERY_INITIAL_CAPACITY) 试探，
+若返回 out_count == 初始容量则按真实数量再查一次。
+
+@param open_order_id   开仓委托ID（非空）
+@param include_history 0=仅今日平仓+未平仓；1=全部
+@return 查询到的 AccountPositionWithOrder 数组（空数组表示无数据或出错）
+
+错误码：
+  - 0(OM_Ok) 成功；
+  - -1(OM_InvalidArg) 参数非法；
+  - -8(OM_NotInited) service 未初始化
+"""
+function om_query_account_position_records(open_order_id::String, include_history::Integer)::Vector{cAccountPositionWithOrder}
+    sym = Libc.Libdl.dlsym(lib, :om_query_account_position_records)
+    buf = Vector{cAccountPositionWithOrder}(undef, _QUERY_INITIAL_CAPACITY)
+    out_count = Ref{Cint}(0)
+    err = ccall(sym, Cint,
+                (Ptr{UInt8}, Cint, Ptr{cAccountPositionWithOrder}, Cint, Ref{Cint}),
+                open_order_id, include_history,
+                buf, _QUERY_INITIAL_CAPACITY, out_count)
+    err == 0 || return Vector{cAccountPositionWithOrder}()
+    n = Int(out_count[])
+    n < _QUERY_INITIAL_CAPACITY && return buf[1:n]
+    buf = Vector{cAccountPositionWithOrder}(undef, n)
+    err = ccall(sym, Cint,
+                (Ptr{UInt8}, Cint, Ptr{cAccountPositionWithOrder}, Cint, Ref{Cint}),
+                open_order_id, include_history, buf, n, out_count)
+    err == 0 || return Vector{cAccountPositionWithOrder}()
+    return buf[1:Int(out_count[])]
+end
+export om_query_account_position_records
+
+"""
+    om_query_account_position_his(oper_date::Integer)::Vector{cAccountPositionWithOrder}
+读取某日账户级 account_position_his 快照（使用缓存作用域）。
+
+account_position_his 由每日结算物化写入（每日当日未平 + 当日平的 AccountPositionWithOrder 快照）。
+当日数据请用 om_query_account_position_records 实时聚合；历史快照用本接口按 oper_date 读取。
+
+【两段式查询】内部先用初始容量 $(_QUERY_INITIAL_CAPACITY) 试探，
+若返回 out_count == 初始容量则按真实数量再查一次。
+
+@param oper_date 归属日 YYYYMMDD
+@return 查询到的 AccountPositionWithOrder 数组（空数组表示无数据或出错）
+
+错误码：
+  - 0(OM_Ok) 成功；
+  - -1(OM_InvalidArg) 参数非法；
+  - -8(OM_NotInited) service 未初始化
+"""
+function om_query_account_position_his(oper_date::Integer)::Vector{cAccountPositionWithOrder}
+    sym = Libc.Libdl.dlsym(lib, :om_query_account_position_his)
+    buf = Vector{cAccountPositionWithOrder}(undef, _QUERY_INITIAL_CAPACITY)
+    out_count = Ref{Cint}(0)
+    err = ccall(sym, Cint,
+                (Cint, Ptr{cAccountPositionWithOrder}, Cint, Ref{Cint}),
+                oper_date, buf, _QUERY_INITIAL_CAPACITY, out_count)
+    err == 0 || return Vector{cAccountPositionWithOrder}()
+    n = Int(out_count[])
+    n < _QUERY_INITIAL_CAPACITY && return buf[1:n]
+    buf = Vector{cAccountPositionWithOrder}(undef, n)
+    err = ccall(sym, Cint,
+                (Cint, Ptr{cAccountPositionWithOrder}, Cint, Ref{Cint}),
+                oper_date, buf, n, out_count)
+    err == 0 || return Vector{cAccountPositionWithOrder}()
+    return buf[1:Int(out_count[])]
+end
+export om_query_account_position_his
 
 end # module
