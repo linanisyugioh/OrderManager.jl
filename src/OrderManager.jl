@@ -898,9 +898,11 @@ end
 export om_verify_assets
 
 # ==================== 持仓记录聚合查询 API ====================
-
-# 聚合查询首次试探缓冲区容量
-const _QUERY_INITIAL_CAPACITY = 64
+#
+# 说明：新版 C 接口（om_query.h）改为「C 端返回内部缓存指针」模式：
+#   int f(..., const T** out_buf, int* out_count)
+# out_buf 指向 service 内缓存，在下次调用同一接口或 om_release 前有效。
+# Julia 端将其复制成新 Vector 返回，避免缓存被下一次调用覆盖导致的悬挂引用。
 
 """
     om_query_position_records(strategy_id::String, open_order_id::String, include_history::Integer)::Vector{cPositionWithOrder}
@@ -910,9 +912,8 @@ const _QUERY_INITIAL_CAPACITY = 64
 已平部分取自 position_unit_his，逐组聚合为一条 PositionWithOrder 返回。
 一个开仓委托可能产出 0..N 条已平 + 0..1 条未平记录。交易日由系统内部取（无需调用方传入）。
 
-【两段式查询】内部先用初始容量 $(_QUERY_INITIAL_CAPACITY) 试探，
-若返回 out_count == 初始容量（缓冲区可能装不下全部数据），
-则按 out_count 重新分配后再查一次，确保不丢数据。
+【实现说明】C 端在 service 内维护缓存，通过 out_buf 返回指向该缓存的只读指针。
+Julia 端将结果拷贝成独立 Vector 返回，避免 service 缓存被下次调用覆盖导致的悬挂引用。
 
 @param strategy_id     策略ID（非空）
 @param open_order_id   开仓委托ID（非空）
@@ -927,24 +928,16 @@ const _QUERY_INITIAL_CAPACITY = 64
 function om_query_position_records(strategy_id::String, open_order_id::String,
                                    include_history::Integer)::Vector{cPositionWithOrder}
     sym = Libc.Libdl.dlsym(lib, :om_query_position_records)
-    # 第一次：用初始容量试探
-    buf = Vector{cPositionWithOrder}(undef, _QUERY_INITIAL_CAPACITY)
+    out_buf = Ref{Ptr{cPositionWithOrder}}(C_NULL)
     out_count = Ref{Cint}(0)
     err = ccall(sym, Cint,
-                (Ptr{UInt8}, Ptr{UInt8}, Cint, Ptr{cPositionWithOrder}, Cint, Ref{Cint}),
-                strategy_id, open_order_id, include_history,
-                buf, _QUERY_INITIAL_CAPACITY, out_count)
+                (Ptr{UInt8}, Ptr{UInt8}, Cint, Ref{Ptr{cPositionWithOrder}}, Ref{Cint}),
+                strategy_id, open_order_id, include_history, out_buf, out_count)
     err == 0 || return Vector{cPositionWithOrder}()
     n = Int(out_count[])
-    n < _QUERY_INITIAL_CAPACITY && return buf[1:n]
-    # 缓冲区可能不足，按真实数量再查一次
-    buf = Vector{cPositionWithOrder}(undef, n)
-    err = ccall(sym, Cint,
-                (Ptr{UInt8}, Ptr{UInt8}, Cint, Ptr{cPositionWithOrder}, Cint, Ref{Cint}),
-                strategy_id, open_order_id, include_history,
-                buf, n, out_count)
-    err == 0 || return Vector{cPositionWithOrder}()
-    return buf[1:Int(out_count[])]
+    (n == 0 || out_buf[] == C_NULL) && return Vector{cPositionWithOrder}()
+    # unsafe_wrap 复用 C 端缓存，立刻 copy 出独立副本，避免缓存被下次调用覆盖
+    return copy(unsafe_wrap(Array, out_buf[], n; own=false))
 end
 export om_query_position_records
 
@@ -955,8 +948,8 @@ export om_query_position_records
 position_his 由每日结算物化写入（每日当日未平 + 当日平的 PositionWithOrder 快照）。
 当日数据请用 om_query_position_records 实时聚合；历史快照用本接口按 oper_date 读取。
 
-【两段式查询】内部先用初始容量 $(_QUERY_INITIAL_CAPACITY) 试探，
-若返回 out_count == 初始容量则按真实数量再查一次。
+【实现说明】C 端在 service 内维护缓存，通过 out_buf 返回指向该缓存的只读指针。
+Julia 端将结果拷贝成独立 Vector 返回。
 
 @param strategy_id 策略ID（非空）
 @param oper_date   归属日 YYYYMMDD
@@ -969,20 +962,15 @@ position_his 由每日结算物化写入（每日当日未平 + 当日平的 Pos
 """
 function om_query_position_his(strategy_id::String, oper_date::Integer)::Vector{cPositionWithOrder}
     sym = Libc.Libdl.dlsym(lib, :om_query_position_his)
-    buf = Vector{cPositionWithOrder}(undef, _QUERY_INITIAL_CAPACITY)
+    out_buf = Ref{Ptr{cPositionWithOrder}}(C_NULL)
     out_count = Ref{Cint}(0)
     err = ccall(sym, Cint,
-                (Ptr{UInt8}, Cint, Ptr{cPositionWithOrder}, Cint, Ref{Cint}),
-                strategy_id, oper_date, buf, _QUERY_INITIAL_CAPACITY, out_count)
+                (Ptr{UInt8}, Cint, Ref{Ptr{cPositionWithOrder}}, Ref{Cint}),
+                strategy_id, oper_date, out_buf, out_count)
     err == 0 || return Vector{cPositionWithOrder}()
     n = Int(out_count[])
-    n < _QUERY_INITIAL_CAPACITY && return buf[1:n]
-    buf = Vector{cPositionWithOrder}(undef, n)
-    err = ccall(sym, Cint,
-                (Ptr{UInt8}, Cint, Ptr{cPositionWithOrder}, Cint, Ref{Cint}),
-                strategy_id, oper_date, buf, n, out_count)
-    err == 0 || return Vector{cPositionWithOrder}()
-    return buf[1:Int(out_count[])]
+    (n == 0 || out_buf[] == C_NULL) && return Vector{cPositionWithOrder}()
+    return copy(unsafe_wrap(Array, out_buf[], n; own=false))
 end
 export om_query_position_his
 
@@ -993,8 +981,8 @@ export om_query_position_his
 与 om_query_position_records 对称，但为账户级（无 strategy_id），数据源是
 account_position_unit / account_position_unit_his，支持 combination。
 
-【两段式查询】内部先用初始容量 $(_QUERY_INITIAL_CAPACITY) 试探，
-若返回 out_count == 初始容量则按真实数量再查一次。
+【实现说明】C 端在 service 内维护缓存，通过 out_buf 返回指向该缓存的只读指针。
+Julia 端将结果拷贝成独立 Vector 返回。
 
 @param open_order_id   开仓委托ID（非空）
 @param include_history 0=仅今日平仓+未平仓；1=全部
@@ -1007,21 +995,15 @@ account_position_unit / account_position_unit_his，支持 combination。
 """
 function om_query_account_position_records(open_order_id::String, include_history::Integer)::Vector{cAccountPositionWithOrder}
     sym = Libc.Libdl.dlsym(lib, :om_query_account_position_records)
-    buf = Vector{cAccountPositionWithOrder}(undef, _QUERY_INITIAL_CAPACITY)
+    out_buf = Ref{Ptr{cAccountPositionWithOrder}}(C_NULL)
     out_count = Ref{Cint}(0)
     err = ccall(sym, Cint,
-                (Ptr{UInt8}, Cint, Ptr{cAccountPositionWithOrder}, Cint, Ref{Cint}),
-                open_order_id, include_history,
-                buf, _QUERY_INITIAL_CAPACITY, out_count)
+                (Ptr{UInt8}, Cint, Ref{Ptr{cAccountPositionWithOrder}}, Ref{Cint}),
+                open_order_id, include_history, out_buf, out_count)
     err == 0 || return Vector{cAccountPositionWithOrder}()
     n = Int(out_count[])
-    n < _QUERY_INITIAL_CAPACITY && return buf[1:n]
-    buf = Vector{cAccountPositionWithOrder}(undef, n)
-    err = ccall(sym, Cint,
-                (Ptr{UInt8}, Cint, Ptr{cAccountPositionWithOrder}, Cint, Ref{Cint}),
-                open_order_id, include_history, buf, n, out_count)
-    err == 0 || return Vector{cAccountPositionWithOrder}()
-    return buf[1:Int(out_count[])]
+    (n == 0 || out_buf[] == C_NULL) && return Vector{cAccountPositionWithOrder}()
+    return copy(unsafe_wrap(Array, out_buf[], n; own=false))
 end
 export om_query_account_position_records
 
@@ -1032,8 +1014,8 @@ export om_query_account_position_records
 account_position_his 由每日结算物化写入（每日当日未平 + 当日平的 AccountPositionWithOrder 快照）。
 当日数据请用 om_query_account_position_records 实时聚合；历史快照用本接口按 oper_date 读取。
 
-【两段式查询】内部先用初始容量 $(_QUERY_INITIAL_CAPACITY) 试探，
-若返回 out_count == 初始容量则按真实数量再查一次。
+【实现说明】C 端在 service 内维护缓存，通过 out_buf 返回指向该缓存的只读指针。
+Julia 端将结果拷贝成独立 Vector 返回。
 
 @param oper_date 归属日 YYYYMMDD
 @return 查询到的 AccountPositionWithOrder 数组（空数组表示无数据或出错）
@@ -1045,20 +1027,15 @@ account_position_his 由每日结算物化写入（每日当日未平 + 当日�
 """
 function om_query_account_position_his(oper_date::Integer)::Vector{cAccountPositionWithOrder}
     sym = Libc.Libdl.dlsym(lib, :om_query_account_position_his)
-    buf = Vector{cAccountPositionWithOrder}(undef, _QUERY_INITIAL_CAPACITY)
+    out_buf = Ref{Ptr{cAccountPositionWithOrder}}(C_NULL)
     out_count = Ref{Cint}(0)
     err = ccall(sym, Cint,
-                (Cint, Ptr{cAccountPositionWithOrder}, Cint, Ref{Cint}),
-                oper_date, buf, _QUERY_INITIAL_CAPACITY, out_count)
+                (Cint, Ref{Ptr{cAccountPositionWithOrder}}, Ref{Cint}),
+                oper_date, out_buf, out_count)
     err == 0 || return Vector{cAccountPositionWithOrder}()
     n = Int(out_count[])
-    n < _QUERY_INITIAL_CAPACITY && return buf[1:n]
-    buf = Vector{cAccountPositionWithOrder}(undef, n)
-    err = ccall(sym, Cint,
-                (Cint, Ptr{cAccountPositionWithOrder}, Cint, Ref{Cint}),
-                oper_date, buf, n, out_count)
-    err == 0 || return Vector{cAccountPositionWithOrder}()
-    return buf[1:Int(out_count[])]
+    (n == 0 || out_buf[] == C_NULL) && return Vector{cAccountPositionWithOrder}()
+    return copy(unsafe_wrap(Array, out_buf[], n; own=false))
 end
 export om_query_account_position_his
 
