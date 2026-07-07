@@ -1,6 +1,6 @@
 name = "OrderManager"
 uuid = "66414a9b-d4cf-4ae0-8362-93303e1a00f9"
-version = "1.0.0-DEV"
+version = "0.1.17"
 authors = ["linan <linanisyugioh@163.com>"]
 
 [deps]
